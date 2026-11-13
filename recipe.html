@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>我的食谱</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f8f6f2;
+        --panel: #ffffff;
+        --text: #2f2a25;
+        --muted: #7a6f66;
+        --line: #eadfd5;
+        --accent: #8a4f2f;
+        --accent-bg: #fff3ec;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      .page {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 24px 16px 32px;
+      }
+
+      .header h1 {
+        margin: 0;
+        font-size: 1.8rem;
+      }
+
+      .header p {
+        margin: 8px 0 0;
+        color: var(--muted);
+        font-size: 0.94rem;
+      }
+
+      .layout {
+        margin-top: 14px;
+        display: grid;
+        grid-template-columns: 320px minmax(0, 1fr);
+        gap: 14px;
+        min-height: 70vh;
+      }
+
+      .sidebar,
+      .content {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+      }
+
+      .sidebar {
+        padding: 14px;
+        overflow: auto;
+      }
+
+      .sidebar h2 {
+        margin: 0;
+        font-size: 1.05rem;
+      }
+
+      .sidebar-state {
+        margin: 8px 0 12px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .category {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+        background: #fffdfa;
+      }
+
+      .category + .category {
+        margin-top: 10px;
+      }
+
+      .category summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 10px 12px;
+        font-weight: 600;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        user-select: none;
+      }
+
+      .category summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .count {
+        color: var(--muted);
+        font-size: 0.85rem;
+        font-weight: normal;
+      }
+
+      .recipe-list {
+        padding: 0 8px 8px;
+      }
+
+      .recipe-item {
+        width: 100%;
+        text-align: left;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        padding: 8px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 0.92rem;
+        line-height: 1.4;
+      }
+
+      .recipe-item:hover {
+        background: #f6efe8;
+      }
+
+      .recipe-item.active {
+        background: var(--accent-bg);
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      .content {
+        padding: 18px;
+      }
+
+      .recipe-title {
+        margin: 0;
+        font-size: 1.7rem;
+      }
+
+      .recipe-path {
+        margin: 8px 0 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+        word-break: break-all;
+      }
+
+      .mold {
+        margin-top: 12px;
+        display: inline-block;
+        background: var(--accent-bg);
+        color: var(--accent);
+        border: 1px solid #f1d6c8;
+        border-radius: 999px;
+        padding: 6px 11px;
+        font-size: 0.86rem;
+      }
+
+      h3 {
+        margin: 18px 0 8px;
+        font-size: 1.02rem;
+      }
+
+      ol {
+        margin: 0;
+        padding-left: 20px;
+      }
+
+      li,
+      p {
+        line-height: 1.65;
+      }
+
+      .error {
+        color: #9a2a2a;
+        background: #fff4f4;
+        border: 1px solid #f0c8c8;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 0.9rem;
+      }
+
+      @media (max-width: 900px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="header">
+        <h1>🍳 我的食谱</h1>
+        <p>左侧分类可折叠，按字母排序；右侧显示当前选中的食谱内容。</p>
+      </header>
+
+      <section class="layout">
+        <aside class="sidebar">
+          <h2>分类目录</h2>
+          <div id="sidebar-state" class="sidebar-state">正在加载食谱...</div>
+          <nav id="category-list" aria-label="食谱分类列表"></nav>
+        </aside>
+
+        <section class="content">
+          <article id="recipe-view">
+            <h2 id="recipe-title" class="recipe-title">正在加载食谱...</h2>
+            <p id="recipe-path" class="recipe-path"></p>
+            <div id="recipe-mold" class="mold" hidden></div>
+            <div id="recipe-body"><p style="color: var(--muted)">请稍候，正在读取目录。</p></div>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      const recipeCache = new Map();
+      let allPaths = [];
+
+      function sortAlphabetically(values) {
+        return [...values].sort((first, second) => first.localeCompare(second, "en", { sensitivity: "base" }));
+      }
+
+      function decodePathName(path) {
+        return path
+          .split("/")
+          .map((part) => {
+            try {
+              return decodeURIComponent(part);
+            } catch {
+              return part;
+            }
+          })
+          .join("/");
+      }
+
+      function getRepoContext() {
+        const host = window.location.hostname;
+        const pathParts = window.location.pathname.split("/").filter(Boolean);
+
+        if (!host.endsWith("github.io")) {
+          return null;
+        }
+
+        const owner = host.split(".")[0];
+        const repo = pathParts[0] || `${owner}.github.io`;
+        return { owner, repo };
+      }
+
+      async function fetchRecipePathsFromGitHubApi() {
+        const context = getRepoContext();
+        if (!context) {
+          return [];
+        }
+
+        for (const branch of ["main", "master"]) {
+          const url = `https://api.github.com/repos/${context.owner}/${context.repo}/git/trees/${branch}?recursive=1`;
+          const response = await fetch(url);
+          if (!response.ok) {
+            continue;
+          }
+
+          const data = await response.json();
+          if (!Array.isArray(data.tree)) {
+            continue;
+          }
+
+          const paths = data.tree
+            .filter((item) => item.type === "blob")
+            .map((item) => decodePathName(item.path || ""))
+            .filter((path) => path.toLowerCase().endsWith(".md"))
+            .filter((path) => !path.startsWith(".github/"))
+            .filter((path) => !path.includes("/node_modules/"));
+
+          return sortAlphabetically(paths);
+        }
+
+        return [];
+      }
+
+      async function fetchRecipePathsFallback() {
+        const known = [
+          "Baking/戚风蛋糕.md",
+          "Baking/巴斯克蛋糕.md",
+          "Chinese Cusine/卤牛腱.md",
+          "Chinese Cusine/虾滑.md"
+        ];
+
+        const checks = await Promise.all(
+          known.map(async (path) => {
+            try {
+              const response = await fetch(`./${encodeURI(path)}`, { method: "HEAD" });
+              return response.ok ? path : null;
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        return sortAlphabetically(checks.filter(Boolean));
+      }
+
+      function getCategoryFromPath(path) {
+        const parts = path.split("/").filter(Boolean);
+        return parts.length > 1 ? parts[0] : "未分类";
+      }
+
+      function getTitleFromPath(path) {
+        const fileName = path.split("/").pop() || "";
+        return fileName.replace(/\.md$/i, "") || "未命名食谱";
+      }
+
+      function parseRecipe(markdownText, fallbackTitle) {
+        const lines = markdownText
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean);
+
+        let title = "";
+        let moldText = "";
+        const steps = [];
+        const notes = [];
+
+        for (const line of lines) {
+          const heading = line.match(/^#\s+(.+)$/);
+          if (heading && !title) {
+            title = heading[1].trim();
+            continue;
+          }
+
+          if (line.startsWith("模具")) {
+            moldText = line.replace(/^[模具：:\s]+/, "").trim() || line;
+            continue;
+          }
+
+          const stepMatch = line.match(/^Step\s*(\d+)\s*[:：]?\s*(.*)$/i);
+          if (stepMatch) {
+            steps.push(stepMatch[2]?.trim() || `步骤 ${stepMatch[1]}`);
+            continue;
+          }
+
+          const listMatch = line.match(/^\d+[.、]\s*(.*)$/);
+          if (listMatch) {
+            steps.push(listMatch[1].trim() || line);
+            continue;
+          }
+
+          if (!heading) {
+            notes.push(line);
+          }
+        }
+
+        return {
+          title: title || fallbackTitle || "未命名食谱",
+          moldText,
+          steps,
+          notes
+        };
+      }
+
+      async function loadRecipe(path) {
+        if (recipeCache.has(path)) {
+          return recipeCache.get(path);
+        }
+
+        const response = await fetch(`./${encodeURI(path)}`);
+        if (!response.ok) {
+          throw new Error(`读取失败（${response.status}）`);
+        }
+
+        const markdown = await response.text();
+        const parsed = parseRecipe(markdown, getTitleFromPath(path));
+        recipeCache.set(path, parsed);
+        return parsed;
+      }
+
+      function setActivePath(path) {
+        const buttons = document.querySelectorAll(".recipe-item");
+        for (const button of buttons) {
+          button.classList.toggle("active", button.dataset.path === path);
+        }
+      }
+
+      function renderRecipeView(path, recipe) {
+        const title = document.getElementById("recipe-title");
+        const recipePath = document.getElementById("recipe-path");
+        const mold = document.getElementById("recipe-mold");
+        const body = document.getElementById("recipe-body");
+
+        title.textContent = recipe.title;
+        recipePath.textContent = path;
+
+        if (recipe.moldText) {
+          mold.hidden = false;
+          mold.textContent = `模具：${recipe.moldText}`;
+        } else {
+          mold.hidden = true;
+          mold.textContent = "";
+        }
+
+        body.innerHTML = "";
+
+        if (recipe.steps.length) {
+          const stepHeading = document.createElement("h3");
+          stepHeading.textContent = "步骤";
+
+          const list = document.createElement("ol");
+          for (const step of recipe.steps) {
+            const item = document.createElement("li");
+            item.textContent = step;
+            list.appendChild(item);
+          }
+
+          body.append(stepHeading, list);
+        }
+
+        if (recipe.notes.length) {
+          const noteHeading = document.createElement("h3");
+          noteHeading.textContent = "备注";
+          body.appendChild(noteHeading);
+
+          for (const note of recipe.notes) {
+            const paragraph = document.createElement("p");
+            paragraph.textContent = note;
+            body.appendChild(paragraph);
+          }
+        }
+
+        if (!recipe.steps.length && !recipe.notes.length && !recipe.moldText) {
+          const empty = document.createElement("p");
+          empty.textContent = "这份食谱还没有内容。";
+          body.appendChild(empty);
+        }
+
+        setActivePath(path);
+      }
+
+      function renderLoadError(path, message) {
+        const body = document.getElementById("recipe-body");
+
+        document.getElementById("recipe-title").textContent = getTitleFromPath(path);
+        document.getElementById("recipe-path").textContent = path;
+        document.getElementById("recipe-mold").hidden = true;
+
+        body.innerHTML = `<div class="error">读取失败：${message}</div>`;
+        setActivePath(path);
+      }
+
+      async function selectRecipe(path, { pushHash = true } = {}) {
+        try {
+          const recipe = await loadRecipe(path);
+          renderRecipeView(path, recipe);
+          if (pushHash) {
+            window.location.hash = encodeURIComponent(path);
+          }
+        } catch (error) {
+          renderLoadError(path, error?.message || "未知错误");
+        }
+      }
+
+      function buildSidebar(paths) {
+        const nav = document.getElementById("category-list");
+        nav.innerHTML = "";
+
+        const grouped = new Map();
+        for (const path of paths) {
+          const category = getCategoryFromPath(path);
+          if (!grouped.has(category)) {
+            grouped.set(category, []);
+          }
+
+          grouped.get(category).push(path);
+        }
+
+        const categories = sortAlphabetically(Array.from(grouped.keys()));
+
+        for (const [index, category] of categories.entries()) {
+          const details = document.createElement("details");
+          details.className = "category";
+          details.open = index === 0;
+
+          const summary = document.createElement("summary");
+          const count = grouped.get(category).length;
+          summary.innerHTML = `<span>${category}</span><span class="count">${count} 份</span>`;
+
+          const list = document.createElement("div");
+          list.className = "recipe-list";
+
+          const sortedPaths = sortAlphabetically(grouped.get(category));
+          for (const path of sortedPaths) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "recipe-item";
+            button.dataset.path = path;
+            button.textContent = getTitleFromPath(path);
+            button.addEventListener("click", () => selectRecipe(path));
+            list.appendChild(button);
+          }
+
+          details.append(summary, list);
+          nav.appendChild(details);
+        }
+      }
+
+      async function bootstrap() {
+        const sidebarState = document.getElementById("sidebar-state");
+
+        try {
+          let paths = await fetchRecipePathsFromGitHubApi();
+          if (!paths.length) {
+            paths = await fetchRecipePathsFallback();
+          }
+
+          if (!paths.length) {
+            sidebarState.innerHTML = '<span class="error">没有找到 .md 食谱文件。</span>';
+            return;
+          }
+
+          allPaths = paths;
+          buildSidebar(paths);
+          sidebarState.textContent = `共 ${paths.length} 份食谱，按分类与字母排序。`;
+
+          const hashPath = window.location.hash ? decodeURIComponent(window.location.hash.slice(1)) : "";
+          const initialPath = paths.includes(hashPath) ? hashPath : paths[0];
+          selectRecipe(initialPath, { pushHash: !hashPath });
+        } catch (error) {
+          sidebarState.innerHTML = `<span class="error">加载失败：${error?.message || "未知错误"}</span>`;
+        }
+      }
+
+      window.addEventListener("hashchange", () => {
+        const hashPath = window.location.hash ? decodeURIComponent(window.location.hash.slice(1)) : "";
+        if (hashPath && allPaths.includes(hashPath)) {
+          selectRecipe(hashPath, { pushHash: false });
+        }
+      });
+
+      bootstrap();
+    </script>
+  </body>
+</html>
