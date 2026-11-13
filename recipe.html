@@ -333,8 +333,8 @@
             continue;
           }
 
-          if (line.startsWith("模具")) {
-            moldText = line.replace(/^[模具：:\s]+/, "").trim() || line;
+          if (line.startsWith("圆形模具")) {
+            moldText = line.replace(/^[圆形模具\s]+/, "").trim() || line;
             continue;
           }
 
@@ -397,7 +397,7 @@
 
         if (recipe.moldText) {
           mold.hidden = false;
-          mold.textContent = `模具：${recipe.moldText}`;
+          mold.textContent = `圆形模具：${recipe.moldText}`;
         } else {
           mold.hidden = true;
           mold.textContent = "";
